@@ -49,27 +49,14 @@ serve(async (req) => {
 });
 
 async function simulateMP3Conversion(title: string): Promise<Uint8Array> {
-  // Simulate conversion delay
-  await new Promise(resolve => setTimeout(resolve, 2000));
-  
-  // Create a simple MP3-like file (just dummy data for simulation)
-  const dummyMP3Header = new Uint8Array([
-    0xFF, 0xFB, 0x90, 0x00, // MP3 header
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-  ]);
-  
-  // Add some dummy audio data
-  const audioData = new Uint8Array(1024 * 50); // 50KB of dummy data
-  for (let i = 0; i < audioData.length; i++) {
-    audioData[i] = Math.floor(Math.random() * 256);
+  // Fetch a 1-second silent MP3 to ensure it's playable in Garry's Mod
+  const sampleUrl = 'https://github.com/anars/blank-audio/blob/master/1-second-of-silence.mp3?raw=1';
+  const res = await fetch(sampleUrl);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch sample MP3: ${res.status}`);
   }
-  
-  // Combine header and data
-  const mp3File = new Uint8Array(dummyMP3Header.length + audioData.length);
-  mp3File.set(dummyMP3Header);
-  mp3File.set(audioData, dummyMP3Header.length);
-  
-  return mp3File;
+  const arrayBuffer = await res.arrayBuffer();
+  return new Uint8Array(arrayBuffer);
 }
 
 async function uploadToGitHub(fileName: string, mp3Data: Uint8Array): Promise<string> {
@@ -83,20 +70,23 @@ async function uploadToGitHub(fileName: string, mp3Data: Uint8Array): Promise<st
   const repo = 'youtubeconverter';
   const path = `mp3/${fileName}`;
 
-  // Convert binary data to base64
+  // Convert binary data to base64 (sufficient for small files)
   const base64Content = btoa(String.fromCharCode(...mp3Data));
 
-  const uploadData = {
-    message: `Add MP3 file: ${fileName}`,
-    content: base64Content,
-    branch: 'main'
-  };
+  const branchesToTry = ['main', 'master'];
+  let lastErrorText = '';
 
-  console.log(`Uploading to GitHub: ${owner}/${repo}/${path}`);
+  for (const branch of branchesToTry) {
+    const uploadData = {
+      message: `Add MP3 file: ${fileName}`,
+      content: base64Content,
+      branch
+    };
 
-  const response = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}/contents/${path}`,
-    {
+    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+    console.log(`Uploading to GitHub: ${owner}/${repo}/${path} on branch ${branch}`);
+
+    const response = await fetch(url, {
       method: 'PUT',
       headers: {
         'Authorization': `Bearer ${githubToken}`,
@@ -105,17 +95,16 @@ async function uploadToGitHub(fileName: string, mp3Data: Uint8Array): Promise<st
         'User-Agent': 'YouTube-MP3-Converter'
       },
       body: JSON.stringify(uploadData)
-    }
-  );
+    });
 
-  if (!response.ok) {
-    const error = await response.text();
-    console.error('GitHub upload error:', error);
-    throw new Error(`GitHub upload failed: ${response.status} ${error}`);
+    if (response.ok) {
+      // Prefer blob URL with ?raw=1 for Garry's Mod
+      return `https://github.com/${owner}/${repo}/blob/${branch}/${path}?raw=1`;
+    }
+
+    lastErrorText = await response.text();
+    console.error(`GitHub upload error on ${branch}:`, lastErrorText);
   }
 
-  const result = await response.json();
-  
-  // Return the raw GitHub URL that Garry's Mod can access
-  return `https://raw.githubusercontent.com/${owner}/${repo}/main/${path}`;
+  throw new Error(`GitHub upload failed: ${lastErrorText || 'Unknown error'}`);
 }
