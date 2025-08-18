@@ -61,6 +61,11 @@ serve(async (req) => {
       error: 0,
       file: githubRawUrl,
       title,
+      // Redundant fields for E2 compatibility
+      url: githubRawUrl,
+      streamLink: githubRawUrl,
+      name: title,
+      videoTitle: title,
       // Backward compatibility for existing frontend
       success: true,
       downloadUrl: githubRawUrl,
