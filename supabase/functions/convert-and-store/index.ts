@@ -201,8 +201,8 @@ async function uploadToGitHub(fileName: string, mp3Data: Uint8Array): Promise<st
       });
 
       if (putRes.ok) {
-        // Return GitHub blob URL with ?raw=1 which is known to stream in GMod
-        return `https://github.com/${owner}/${repo}/blob/${branch}/${path}?raw=1`;
+        // Return the direct RAW GitHub URL (no redirects) for maximum player compatibility
+        return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`;
       }
 
       lastErrorText = await putRes.text();
