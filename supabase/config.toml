@@ -1,1 +1,4 @@
 project_id = "rvriusilogmauhauhnte"
+
+[functions.convert-and-store]
+verify_jwt = false

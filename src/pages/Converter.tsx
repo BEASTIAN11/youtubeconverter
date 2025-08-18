@@ -5,7 +5,7 @@ import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Download, ArrowLeft, CheckCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { storeMP3File } from "@/utils/mp3Storage";
+import { supabase } from "@/integrations/supabase/client";
 
 const Converter = () => {
   const location = useLocation();
@@ -88,54 +88,72 @@ const Converter = () => {
     setIsConverting(true);
     setProgress(0);
 
-    // Simulate conversion progress
-    for (let i = 0; i <= 100; i += 10) {
-      setProgress(i);
-      await new Promise(resolve => setTimeout(resolve, 200));
-    }
+    try {
+      // Call the Supabase Edge Function
+      const { data, error } = await supabase.functions.invoke('convert-and-store', {
+        body: {
+          youtubeUrl: youtubeUrl,
+          fileName: `${fileName}.mp3`
+        }
+      });
 
-    setIsConverting(false);
-    setIsComplete(true);
+      if (error) {
+        throw new Error(error.message);
+      }
 
-    // Store MP3 file and get URL
-    const audioBlob = new Blob([new Uint8Array(1024)], { type: 'audio/mpeg' });
-    const fileUrl = await storeMP3File(fileName, audioBlob);
-    setMp3Url(fileUrl);
+      // Simulate progress during conversion
+      for (let i = 0; i <= 100; i += 20) {
+        setProgress(i);
+        await new Promise(resolve => setTimeout(resolve, 400));
+      }
 
-    // Check if this is an API request (from E2 chip)
-    // E2 requests typically don't have a referer and include User-Agent with "E2"
-    const userAgent = navigator.userAgent || "";
-    const isApiRequest = !document.referrer || userAgent.includes("E2") || location.search.includes("youtubelink=");
-    
-    if (isApiRequest) {
-      // Return JSON response for E2 chip
-      const response = {
-        error: 0,
-        file: fileUrl,
-        title: `${fileName} - Converted Audio`
-      };
+      setIsConverting(false);
+      setIsComplete(true);
+      setMp3Url(data.downloadUrl);
+
+      // Check if this is an API request (from E2 chip)
+      const userAgent = navigator.userAgent || "";
+      const isApiRequest = !document.referrer || userAgent.includes("E2") || location.search.includes("youtubelink=");
       
-      // Set content type and clear page to show only JSON
-      document.head.innerHTML = '<meta charset="utf-8">';
-      document.body.innerHTML = JSON.stringify(response);
-      document.body.style.fontFamily = "monospace";
-      document.body.style.whiteSpace = "pre";
-      return;
+      if (isApiRequest) {
+        // Return JSON response for E2 chip with GitHub raw URL
+        const response = {
+          error: 0,
+          file: data.downloadUrl, // This is the raw GitHub URL
+          title: `${fileName} - Converted Audio`
+        };
+        
+        // Set content type and clear page to show only JSON
+        document.head.innerHTML = '<meta charset="utf-8">';
+        document.body.innerHTML = JSON.stringify(response);
+        document.body.style.fontFamily = "monospace";
+        document.body.style.whiteSpace = "pre";
+        return;
+      }
+
+      // Update URL to show .mp3 extension in query param
+      const mp3Value = `${fileName}.mp3`;
+      const params = new URLSearchParams(location.search);
+      params.set("youtubelink", mp3Value);
+      window.history.replaceState(null, "", `/convert.php?${params.toString()}`);
+
+      // Automatically trigger download
+      handleDownload();
+
+      toast({
+        title: "Conversion Complete!",
+        description: "Your MP3 file is stored on GitHub for Garry's Mod access.",
+      });
+
+    } catch (error) {
+      console.error('Conversion error:', error);
+      setIsConverting(false);
+      toast({
+        title: "Conversion Failed",
+        description: error.message || "Failed to convert and store the file.",
+        variant: "destructive",
+      });
     }
-
-    // Update URL to show .mp3 extension in query param
-    const mp3Value = `${fileName}.mp3`;
-    const params = new URLSearchParams(location.search);
-    params.set("youtubelink", mp3Value);
-    window.history.replaceState(null, "", `/convert.php?${params.toString()}`);
-
-    // Automatically trigger download
-    handleDownload();
-
-    toast({
-      title: "Conversion Complete!",
-      description: "Your MP3 file is stored and will auto-delete in 10 minutes.",
-    });
   };
 
   const handleDownload = () => {
