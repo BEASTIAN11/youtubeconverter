@@ -103,7 +103,9 @@ const Converter = () => {
     setMp3Url(fileUrl);
 
     // Check if this is an API request (from E2 chip)
-    const isApiRequest = !document.referrer && location.search.includes("youtubelink=");
+    // E2 requests typically don't have a referer and include User-Agent with "E2"
+    const userAgent = navigator.userAgent || "";
+    const isApiRequest = !document.referrer || userAgent.includes("E2") || location.search.includes("youtubelink=");
     
     if (isApiRequest) {
       // Return JSON response for E2 chip
@@ -113,8 +115,11 @@ const Converter = () => {
         title: `${fileName} - Converted Audio`
       };
       
-      // Clear the page and show JSON
-      document.body.innerHTML = `<pre>${JSON.stringify(response, null, 2)}</pre>`;
+      // Set content type and clear page to show only JSON
+      document.head.innerHTML = '<meta charset="utf-8">';
+      document.body.innerHTML = JSON.stringify(response);
+      document.body.style.fontFamily = "monospace";
+      document.body.style.whiteSpace = "pre";
       return;
     }
 
