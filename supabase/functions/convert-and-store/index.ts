@@ -55,8 +55,13 @@ serve(async (req) => {
 
     const title = videoTitle;
 
+    console.log('Conversion completed successfully:');
+    console.log('- GitHub RAW URL:', githubRawUrl);
+    console.log('- Video Title:', title);
+    console.log('- File Name:', fileName);
+
     // Return response in the exact format expected by the E2 chip
-    return new Response(JSON.stringify({
+    const response = {
       // E2 expected fields
       error: 0,
       file: githubRawUrl,
@@ -70,7 +75,11 @@ serve(async (req) => {
       success: true,
       downloadUrl: githubRawUrl,
       fileName,
-    }), {
+    };
+
+    console.log('Final response:', JSON.stringify(response, null, 2));
+
+    return new Response(JSON.stringify(response), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
 
