@@ -37,12 +37,15 @@ serve(async (req) => {
       });
     }
 
-    // Derive a stable filename from the YouTube video id
+    // Extract video ID and get actual title
     const videoId = extractYouTubeId(youtubeUrl) || `audio-${Date.now()}`;
     const fileName = requestedFileName || `${videoId}.mp3`;
 
     console.log('Converting YouTube URL:', youtubeUrl);
     console.log('Target file name:', fileName);
+
+    // Get the actual video title
+    const videoTitle = await getYouTubeTitle(youtubeUrl, videoId);
 
     // Simulate MP3 conversion process (fetch a known-compatible MP3)
     const mp3Data = await simulateMP3Conversion(fileName);
@@ -50,7 +53,7 @@ serve(async (req) => {
     // Upload to GitHub and get a RAW URL (best for GMod streaming)
     const githubRawUrl = await uploadToGitHub(fileName, mp3Data);
 
-    const title = `${videoId} - Converted Audio`;
+    const title = videoTitle;
 
     // Return response in the exact format expected by the E2 chip
     return new Response(JSON.stringify({
@@ -197,6 +200,34 @@ async function uploadToGitHub(fileName: string, mp3Data: Uint8Array): Promise<st
   }
 
   throw new Error(`GitHub upload failed: ${lastErrorText || 'Unknown error'}`);
+}
+
+async function getYouTubeTitle(url: string, videoId: string): Promise<string> {
+  try {
+    // Try to fetch the YouTube page and extract the title
+    const response = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      }
+    });
+    
+    if (response.ok) {
+      const html = await response.text();
+      // Extract title from the page HTML
+      const titleMatch = html.match(/<title>([^<]+)<\/title>/);
+      if (titleMatch && titleMatch[1]) {
+        let title = titleMatch[1].replace(' - YouTube', '').trim();
+        // Clean up any unwanted characters for filename safety
+        title = title.replace(/[<>:"/\\|?*]/g, '').substring(0, 100);
+        return title || `${videoId} - Converted Audio`;
+      }
+    }
+  } catch (error) {
+    console.log('Failed to fetch YouTube title:', error);
+  }
+  
+  // Fallback to video ID if title extraction fails
+  return `${videoId} - Converted Audio`;
 }
 
 function toBase64(data: Uint8Array): string {
