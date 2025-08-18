@@ -17,21 +17,51 @@ serve(async (req) => {
   }
 
   try {
-    const { youtubeUrl, fileName }: ConvertRequest = await req.json();
-    
-    console.log('Converting YouTube URL:', youtubeUrl);
-    console.log('File name:', fileName);
+    let youtubeUrl = '';
+    let requestedFileName = '';
 
-    // Simulate MP3 conversion process
+    // Support both POST JSON and GET query params for E2 compatibility
+    if (req.method === 'GET') {
+      const url = new URL(req.url);
+      youtubeUrl = url.searchParams.get('youtubelink') || url.searchParams.get('youtubeUrl') || '';
+    } else {
+      const body = await req.json().catch(() => ({}));
+      youtubeUrl = body.youtubeUrl || body.youtubelink || '';
+      requestedFileName = body.fileName || '';
+    }
+
+    if (!youtubeUrl) {
+      return new Response(JSON.stringify({ error: 1, message: 'Missing youtubeUrl/youtubelink parameter' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Derive a stable filename from the YouTube video id
+    const videoId = extractYouTubeId(youtubeUrl) || `audio-${Date.now()}`;
+    const fileName = requestedFileName || `${videoId}.mp3`;
+
+    console.log('Converting YouTube URL:', youtubeUrl);
+    console.log('Target file name:', fileName);
+
+    // Simulate MP3 conversion process (fetch a known-compatible MP3)
     const mp3Data = await simulateMP3Conversion(fileName);
-    
-    // Upload to GitHub
-    const githubUrl = await uploadToGitHub(fileName, mp3Data);
-    
-    return new Response(JSON.stringify({ 
-      success: true, 
-      downloadUrl: githubUrl,
-      fileName: fileName
+
+    // Upload to GitHub and get a RAW URL (best for GMod streaming)
+    const githubRawUrl = await uploadToGitHub(fileName, mp3Data);
+
+    const title = `${videoId} - Converted Audio`;
+
+    // Return response in the exact format expected by the E2 chip
+    return new Response(JSON.stringify({
+      // E2 expected fields
+      error: 0,
+      file: githubRawUrl,
+      title,
+      // Backward compatibility for existing frontend
+      success: true,
+      downloadUrl: githubRawUrl,
+      fileName,
     }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
@@ -39,14 +69,30 @@ serve(async (req) => {
   } catch (error) {
     console.error('Error in convert-and-store function:', error);
     return new Response(JSON.stringify({ 
-      error: error.message,
-      success: false 
+      error: 1,
+      message: error.message || String(error)
     }), {
       status: 500,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 });
+
+// Extract YouTube video ID from common URL formats
+function extractYouTubeId(url: string): string | null {
+  try {
+    const u = new URL(url);
+    if (u.hostname.includes('youtube.com')) {
+      return u.searchParams.get('v');
+    }
+    if (u.hostname.includes('youtu.be')) {
+      return u.pathname.replace('/', '') || null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 async function simulateMP3Conversion(title: string): Promise<Uint8Array> {
   // Use a proper MP3 file that's known to work with Garry's Mod
@@ -87,42 +133,79 @@ async function uploadToGitHub(fileName: string, mp3Data: Uint8Array): Promise<st
   const owner = 'BEASTIAN11';
   const repo = 'youtubeconverter';
   const path = `mp3/${fileName}`;
+  const baseUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
 
-  // Convert binary data to base64 (sufficient for small files)
-  const base64Content = btoa(String.fromCharCode(...mp3Data));
+  // Safe base64 conversion for arbitrary-size Uint8Array
+  const base64Content = toBase64(mp3Data);
 
   const branchesToTry = ['main', 'master'];
   let lastErrorText = '';
 
   for (const branch of branchesToTry) {
-    const uploadData = {
-      message: `Add MP3 file: ${fileName}`,
-      content: base64Content,
-      branch
-    };
+    try {
+      // Check if file exists to get the SHA (required for updates)
+      let existingSha: string | undefined = undefined;
+      const getRes = await fetch(`${baseUrl}?ref=${branch}`, {
+        headers: {
+          'Authorization': `Bearer ${githubToken}`,
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'YouTube-MP3-Converter'
+        }
+      });
 
-    const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
-    console.log(`Uploading to GitHub: ${owner}/${repo}/${path} on branch ${branch}`);
+      if (getRes.ok) {
+        const json = await getRes.json();
+        existingSha = json.sha;
+        console.log(`Existing file found on ${branch}, sha=${existingSha}`);
+      } else if (getRes.status === 404) {
+        console.log(`File does not exist on ${branch}, will create new file`);
+      } else {
+        const txt = await getRes.text();
+        console.warn(`Unable to check existing file on ${branch}: ${txt}`);
+      }
 
-    const response = await fetch(url, {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Bearer ${githubToken}`,
-        'Content-Type': 'application/json',
-        'Accept': 'application/vnd.github.v3+json',
-        'User-Agent': 'YouTube-MP3-Converter'
-      },
-      body: JSON.stringify(uploadData)
-    });
+      const uploadData: Record<string, unknown> = {
+        message: `${existingSha ? 'Update' : 'Add'} MP3 file: ${fileName}`,
+        content: base64Content,
+        branch,
+      };
+      if (existingSha) uploadData.sha = existingSha;
 
-    if (response.ok) {
-      // Prefer blob URL with ?raw=1 for Garry's Mod
-      return `https://github.com/${owner}/${repo}/blob/${branch}/${path}?raw=1`;
+      console.log(`Uploading to GitHub: ${owner}/${repo}/${path} on branch ${branch}`);
+      const putRes = await fetch(baseUrl, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${githubToken}`,
+          'Content-Type': 'application/json',
+          'Accept': 'application/vnd.github.v3+json',
+          'User-Agent': 'YouTube-MP3-Converter'
+        },
+        body: JSON.stringify(uploadData)
+      });
+
+      if (putRes.ok) {
+        // Return RAW URL which streams correctly in GMod
+        return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`;
+      }
+
+      lastErrorText = await putRes.text();
+      console.error(`GitHub upload error on ${branch}:`, lastErrorText);
+    } catch (e) {
+      lastErrorText = (e as Error)?.message || String(e);
+      console.error(`GitHub upload exception on ${branch}:`, lastErrorText);
     }
-
-    lastErrorText = await response.text();
-    console.error(`GitHub upload error on ${branch}:`, lastErrorText);
   }
 
   throw new Error(`GitHub upload failed: ${lastErrorText || 'Unknown error'}`);
+}
+
+function toBase64(data: Uint8Array): string {
+  let binary = '';
+  const chunkSize = 0x8000; // 32KB chunks to avoid call stack limits
+  for (let i = 0; i < data.length; i += chunkSize) {
+    const chunk = data.subarray(i, i + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  // deno-lint-ignore no-deprecated-deno-api
+  return btoa(binary);
 }
