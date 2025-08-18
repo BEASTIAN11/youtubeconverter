@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -7,16 +7,17 @@ import { Download, ArrowLeft, CheckCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 const Converter = () => {
-  const { "*": urlPath } = useParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [progress, setProgress] = useState(0);
   const [isConverting, setIsConverting] = useState(true);
   const [isComplete, setIsComplete] = useState(false);
 
-  // Extract YouTube URL from path
-  const youtubeUrl = urlPath ? `https://${urlPath}` : "";
-  const fileName = urlPath?.replace(/^(www\.)?youtube\.com\/watch\?v=/, "") || "video";
+  // Extract YouTube URL from query param
+  const searchParams = new URLSearchParams(location.search);
+  const youtubeUrl = searchParams.get("youtubelink") || "";
+  const fileName = getFileNameFromYouTubeUrl(youtubeUrl);
 
   useEffect(() => {
     if (!youtubeUrl || !isValidYouTubeUrl(youtubeUrl)) {
@@ -41,6 +42,21 @@ const Converter = () => {
     return patterns.some(pattern => pattern.test(url));
   };
 
+  function getFileNameFromYouTubeUrl(url: string): string {
+    try {
+      const u = new URL(url);
+      if (u.hostname.includes("youtu.be")) {
+        const id = u.pathname.slice(1);
+        return id || "video";
+      }
+      const v = u.searchParams.get("v");
+      if (v) return v;
+      const match = u.pathname.match(/\/embed\/([\w-]+)/);
+      if (match) return match[1];
+    } catch {}
+    return "video";
+  }
+
   const simulateConversion = async () => {
     setIsConverting(true);
     setProgress(0);
@@ -54,9 +70,11 @@ const Converter = () => {
     setIsConverting(false);
     setIsComplete(true);
 
-    // Update URL to show .mp3 extension
-    const mp3Path = `/${fileName}.mp3`;
-    window.history.replaceState(null, "", mp3Path);
+    // Update URL to show .mp3 extension in query param
+    const mp3Value = `${fileName}.mp3`;
+    const params = new URLSearchParams(location.search);
+    params.set("youtubelink", mp3Value);
+    window.history.replaceState(null, "", `/convert.php?${params.toString()}`);
 
     toast({
       title: "Conversion Complete!",

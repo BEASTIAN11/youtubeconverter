@@ -17,6 +17,7 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
+          <Route path="/convert.php" element={<Converter />} />
           <Route path="/*" element={<Converter />} />
         </Routes>
       </BrowserRouter>

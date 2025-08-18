@@ -40,9 +40,8 @@ const Index = () => {
       return;
     }
 
-    // Extract the part after https:// to create the path
-    const urlPath = url.replace(/^https?:\/\//, "");
-    navigate(`/${urlPath}`);
+    // Navigate using query param format
+    navigate(`/convert.php?youtubelink=${encodeURIComponent(url)}`);
   };
 
   return (
