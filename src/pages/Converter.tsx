@@ -17,24 +17,34 @@ const Converter = () => {
   // Extract YouTube URL from query param
   const searchParams = new URLSearchParams(location.search);
   const youtubeUrl = searchParams.get("youtubelink") || "";
-  const fileName = getFileNameFromYouTubeUrl(youtubeUrl);
-
-  // Check if this is an API request (from E2 chip)
-  const isApiRequest = location.search.includes("youtubelink=") && 
-                       !youtubeUrl.endsWith(".mp3") && 
-                       !document.referrer;
+  const isMp3Param = /\.mp3$/i.test(youtubeUrl);
+  const fileName = isMp3Param
+    ? ((youtubeUrl.split("/").pop() || "video").replace(/\.mp3$/i, ""))
+    : getFileNameFromYouTubeUrl(youtubeUrl);
 
   useEffect(() => {
-    if (!youtubeUrl || !isValidYouTubeUrl(youtubeUrl)) {
-      if (isApiRequest) {
-        // Return JSON error for E2 chip
-        const errorResponse = { error: 1, message: "Invalid YouTube URL" };
-        document.body.innerHTML = JSON.stringify(errorResponse);
-        return;
-      }
+    if (!youtubeUrl) {
       toast({
         title: "Invalid URL",
-        description: "Please provide a valid YouTube URL in the path.",
+        description: "Please provide a YouTube URL.",
+        variant: "destructive",
+      });
+      navigate("/");
+      return;
+    }
+
+    if (isMp3Param) {
+      setIsConverting(false);
+      setIsComplete(true);
+      // already on .mp3 link; trigger download for convenience
+      handleDownload();
+      return;
+    }
+
+    if (!isValidYouTubeUrl(youtubeUrl)) {
+      toast({
+        title: "Invalid URL",
+        description: "Please provide a valid YouTube URL.",
         variant: "destructive",
       });
       navigate("/");
@@ -42,20 +52,24 @@ const Converter = () => {
     }
 
     simulateConversion();
-  }, [youtubeUrl, navigate, toast, isApiRequest]);
+  }, [youtubeUrl, isMp3Param, navigate, toast]);
 
   const isValidYouTubeUrl = (url: string): boolean => {
+    let u = url.trim();
+    if (!/^https?:\/\//i.test(u)) u = "https://" + u;
     const patterns = [
-      /^https?:\/\/(www\.)?youtube\.com\/watch\?v=[\w-]+/,
-      /^https?:\/\/youtu\.be\/[\w-]+/,
-      /^https?:\/\/(www\.)?youtube\.com\/embed\/[\w-]+/,
+      /^(https?:\/\/)?(www\.)?youtube\.com\/watch\?v=[\w-]+/i,
+      /^(https?:\/\/)?youtu\.be\/[\w-]+/i,
+      /^(https?:\/\/)?(www\.)?youtube\.com\/embed\/[\w-]+/i,
     ];
-    return patterns.some(pattern => pattern.test(url));
+    return patterns.some(pattern => pattern.test(u));
   };
 
   function getFileNameFromYouTubeUrl(url: string): string {
     try {
-      const u = new URL(url);
+      let input = url.trim();
+      if (!/^https?:\/\//i.test(input)) input = "https://" + input;
+      const u = new URL(input);
       if (u.hostname.includes("youtu.be")) {
         const id = u.pathname.slice(1);
         return id || "video";
@@ -80,21 +94,6 @@ const Converter = () => {
 
     setIsConverting(false);
     setIsComplete(true);
-
-    // Generate fake MP3 URL and title for E2 chip
-    const mp3Url = `https://www.soundjay.com/misc/sounds-effects/bell-ringing-05.mp3`;
-    const videoTitle = `Converted Audio - ${fileName}`;
-
-    if (isApiRequest) {
-      // Return JSON response for E2 chip
-      const response = {
-        error: 0,
-        file: mp3Url,
-        title: videoTitle
-      };
-      document.body.innerHTML = JSON.stringify(response);
-      return;
-    }
 
     // Update URL to show .mp3 extension in query param
     const mp3Value = `${fileName}.mp3`;
@@ -137,13 +136,13 @@ const Converter = () => {
             {isComplete ? "Conversion Complete!" : "Converting..."}
           </CardTitle>
           <CardDescription>
-            {isComplete ? "Your MP3 is ready" : "Processing your YouTube video"}
+            {isComplete ? "Your MP3 is ready" : "Processing your YouTube video or MP3 link"}
           </CardDescription>
         </CardHeader>
         
         <CardContent className="space-y-6">
           <div className="text-sm text-muted-foreground break-all">
-            <strong>Source:</strong> {youtubeUrl}
+            <strong>Source:</strong> {youtubeUrl || "(none)"}
           </div>
 
           {isConverting && (
