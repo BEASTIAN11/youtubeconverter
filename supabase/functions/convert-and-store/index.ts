@@ -112,32 +112,38 @@ function extractYouTubeId(url: string): string | null {
 }
 
 async function simulateMP3Conversion(title: string): Promise<Uint8Array> {
-  // Use a proper MP3 file that's known to work with Garry's Mod
-  // This is a short test tone MP3 that should be compatible
-  const sampleUrl = 'https://www.soundjay.com/misc/sounds/bell-ringing-05.mp3';
+  // For now, use a reliable music sample instead of a bell sound
+  // This should be replaced with actual YouTube-to-MP3 conversion in production
+  const musicSampleUrls = [
+    'https://www2.cs.uic.edu/~i101/SoundFiles/PinkPanther30.mp3', // 30 second music sample
+    'https://filesamples.com/samples/audio/mp3/SampleAudio_0.4mb_mp3.mp3', // Known good sample
+    'https://www.learningcontainer.com/wp-content/uploads/2020/02/Kalimba.mp3' // Kalimba sample
+  ];
   
-  try {
-    const res = await fetch(sampleUrl);
-    if (!res.ok) {
-      // Fallback to a working silent MP3 if the primary fails
-      const fallbackUrl = 'https://www2.cs.uic.edu/~i101/SoundFiles/PinkPanther30.mp3';
-      const fallbackRes = await fetch(fallbackUrl);
-      if (!fallbackRes.ok) {
-        throw new Error(`Failed to fetch MP3 files: ${res.status}, ${fallbackRes.status}`);
+  // Try each music sample URL until one works
+  for (const sampleUrl of musicSampleUrls) {
+    try {
+      console.log(`Attempting to fetch music sample: ${sampleUrl}`);
+      const res = await fetch(sampleUrl);
+      if (res.ok) {
+        const arrayBuffer = await res.arrayBuffer();
+        console.log(`Successfully fetched ${arrayBuffer.byteLength} bytes from ${sampleUrl}`);
+        return new Uint8Array(arrayBuffer);
       }
-      const arrayBuffer = await fallbackRes.arrayBuffer();
-      return new Uint8Array(arrayBuffer);
+      console.log(`Failed to fetch from ${sampleUrl}: ${res.status}`);
+    } catch (error) {
+      console.log(`Error fetching from ${sampleUrl}:`, error);
+      continue;
     }
-    const arrayBuffer = await res.arrayBuffer();
-    return new Uint8Array(arrayBuffer);
-  } catch (error) {
-    // Final fallback - create a minimal valid MP3 header
-    const mp3Header = new Uint8Array([
-      0xFF, 0xFB, 0x90, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-    ]);
-    return mp3Header;
   }
+  
+  // Final fallback - create a minimal valid MP3 that won't sound like a bell
+  console.log('All sample URLs failed, creating minimal MP3');
+  const mp3Header = new Uint8Array([
+    0xFF, 0xFB, 0x90, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+  ]);
+  return mp3Header;
 }
 
 async function uploadToGitHub(fileName: string, mp3Data: Uint8Array): Promise<string> {
