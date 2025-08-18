@@ -76,9 +76,12 @@ const Converter = () => {
     params.set("youtubelink", mp3Value);
     window.history.replaceState(null, "", `/convert.php?${params.toString()}`);
 
+    // Automatically trigger download
+    handleDownload();
+
     toast({
       title: "Conversion Complete!",
-      description: "Your MP3 file is ready for download.",
+      description: "Your MP3 file download has started automatically.",
     });
   };
 
