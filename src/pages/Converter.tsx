@@ -19,8 +19,19 @@ const Converter = () => {
   const youtubeUrl = searchParams.get("youtubelink") || "";
   const fileName = getFileNameFromYouTubeUrl(youtubeUrl);
 
+  // Check if this is an API request (from E2 chip)
+  const isApiRequest = location.search.includes("youtubelink=") && 
+                       !youtubeUrl.endsWith(".mp3") && 
+                       !document.referrer;
+
   useEffect(() => {
     if (!youtubeUrl || !isValidYouTubeUrl(youtubeUrl)) {
+      if (isApiRequest) {
+        // Return JSON error for E2 chip
+        const errorResponse = { error: 1, message: "Invalid YouTube URL" };
+        document.body.innerHTML = JSON.stringify(errorResponse);
+        return;
+      }
       toast({
         title: "Invalid URL",
         description: "Please provide a valid YouTube URL in the path.",
@@ -31,7 +42,7 @@ const Converter = () => {
     }
 
     simulateConversion();
-  }, [youtubeUrl, navigate, toast]);
+  }, [youtubeUrl, navigate, toast, isApiRequest]);
 
   const isValidYouTubeUrl = (url: string): boolean => {
     const patterns = [
@@ -69,6 +80,21 @@ const Converter = () => {
 
     setIsConverting(false);
     setIsComplete(true);
+
+    // Generate fake MP3 URL and title for E2 chip
+    const mp3Url = `https://www.soundjay.com/misc/sounds-effects/bell-ringing-05.mp3`;
+    const videoTitle = `Converted Audio - ${fileName}`;
+
+    if (isApiRequest) {
+      // Return JSON response for E2 chip
+      const response = {
+        error: 0,
+        file: mp3Url,
+        title: videoTitle
+      };
+      document.body.innerHTML = JSON.stringify(response);
+      return;
+    }
 
     // Update URL to show .mp3 extension in query param
     const mp3Value = `${fileName}.mp3`;
