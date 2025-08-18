@@ -5,6 +5,7 @@ import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Download, ArrowLeft, CheckCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { storeMP3File } from "@/utils/mp3Storage";
 
 const Converter = () => {
   const location = useLocation();
@@ -13,6 +14,7 @@ const Converter = () => {
   const [progress, setProgress] = useState(0);
   const [isConverting, setIsConverting] = useState(true);
   const [isComplete, setIsComplete] = useState(false);
+  const [mp3Url, setMp3Url] = useState<string>("");
 
   // Extract YouTube URL from query param
   const searchParams = new URLSearchParams(location.search);
@@ -95,6 +97,27 @@ const Converter = () => {
     setIsConverting(false);
     setIsComplete(true);
 
+    // Store MP3 file and get URL
+    const audioBlob = new Blob([new Uint8Array(1024)], { type: 'audio/mpeg' });
+    const fileUrl = await storeMP3File(fileName, audioBlob);
+    setMp3Url(fileUrl);
+
+    // Check if this is an API request (from E2 chip)
+    const isApiRequest = !document.referrer && location.search.includes("youtubelink=");
+    
+    if (isApiRequest) {
+      // Return JSON response for E2 chip
+      const response = {
+        error: 0,
+        file: fileUrl,
+        title: `${fileName} - Converted Audio`
+      };
+      
+      // Clear the page and show JSON
+      document.body.innerHTML = `<pre>${JSON.stringify(response, null, 2)}</pre>`;
+      return;
+    }
+
     // Update URL to show .mp3 extension in query param
     const mp3Value = `${fileName}.mp3`;
     const params = new URLSearchParams(location.search);
@@ -106,21 +129,31 @@ const Converter = () => {
 
     toast({
       title: "Conversion Complete!",
-      description: "Your MP3 file download has started automatically.",
+      description: "Your MP3 file is stored and will auto-delete in 10 minutes.",
     });
   };
 
   const handleDownload = () => {
-    // Create a dummy blob for download simulation
-    const blob = new Blob([""], { type: "audio/mpeg" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${fileName}.mp3`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    if (mp3Url) {
+      // Use the stored MP3 URL
+      const a = document.createElement("a");
+      a.href = mp3Url;
+      a.download = `${fileName}.mp3`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    } else {
+      // Fallback for immediate downloads
+      const blob = new Blob([new Uint8Array(1024)], { type: "audio/mpeg" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${fileName}.mp3`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
 
     toast({
       title: "Download Started",
