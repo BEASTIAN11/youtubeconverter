@@ -115,8 +115,8 @@ async function convertYouTubeToMP3(youtubeUrl: string, videoId: string): Promise
   console.log(`Converting YouTube video ${videoId} to MP3...`);
   
   try {
-    // Use the working RapidAPI endpoint with exact headers
-    const apiUrl = `https://youtube-mp36.p.rapidapi.com/dl?id=${videoId}`;
+    // Use the new YouTube MP3 API endpoint
+    const apiUrl = `https://youtube-mp3-audio-video-downloader.p.rapidapi.com/download-mp3/${videoId}?quality=low`;
     const rapidApiKey = Deno.env.get('RAPIDAPI_KEY') || '';
     
     try {
@@ -126,7 +126,7 @@ async function convertYouTubeToMP3(youtubeUrl: string, videoId: string): Promise
       const response = await fetch(apiUrl, {
         method: 'GET',
         headers: {
-          'x-rapidapi-host': 'youtube-mp36.p.rapidapi.com',
+          'x-rapidapi-host': 'youtube-mp3-audio-video-downloader.p.rapidapi.com',
           'x-rapidapi-key': rapidApiKey
         }
       });
