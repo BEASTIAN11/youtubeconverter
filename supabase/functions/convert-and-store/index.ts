@@ -242,8 +242,8 @@ async function uploadToGitHub(fileName: string, mp3Data: Uint8Array): Promise<st
       });
 
       if (putRes.ok) {
-        // Return the direct RAW GitHub URL (no redirects) for maximum player compatibility
-        return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`;
+        // Return the GitHub URL format expected by E2 chip
+        return `https://github.com/${owner}/${repo}/blob/${branch}/${path}?raw=true`;
       }
 
       lastErrorText = await putRes.text();
