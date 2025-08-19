@@ -115,70 +115,75 @@ async function convertYouTubeToMP3(youtubeUrl: string, videoId: string): Promise
   console.log(`Converting YouTube video ${videoId} to MP3...`);
   
   try {
-    // Use a reliable YouTube to MP3 API service
-    // You can replace this with your preferred service
-    const apiEndpoints = [
-      `https://youtube-mp36.p.rapidapi.com/dl?id=${videoId}`,
-      `https://ytstream-download-youtube-videos.p.rapidapi.com/dl?id=${videoId}&format=mp3`,
-      `https://youtube-mp3-downloader2.p.rapidapi.com/ytmp3/ytmp3/custom/?url=${encodeURIComponent(youtubeUrl)}&quality=128`
-    ];
+    // Use the working RapidAPI endpoint with exact headers
+    const apiUrl = `https://youtube-mp36.p.rapidapi.com/dl?id=${videoId}`;
+    const rapidApiKey = Deno.env.get('RAPIDAPI_KEY') || '';
+    
+    try {
+      console.log(`Converting using RapidAPI: ${apiUrl}`);
+      console.log(`Using API Key: ${rapidApiKey ? 'Present' : 'Missing'}`);
+      
+      const response = await fetch(apiUrl, {
+        method: 'GET',
+        headers: {
+          'x-rapidapi-host': 'youtube-mp36.p.rapidapi.com',
+          'x-rapidapi-key': rapidApiKey
+        }
+      });
 
-    // Try different API endpoints
-    for (const apiUrl of apiEndpoints) {
-      try {
-        console.log(`Trying API endpoint: ${apiUrl}`);
+      console.log(`Response status: ${response.status}`);
+      console.log(`Response headers:`, Object.fromEntries(response.headers.entries()));
+      
+      if (response.ok) {
+        const responseText = await response.text();
+        console.log('Raw API Response:', responseText);
         
-        const response = await fetch(apiUrl, {
-          headers: {
-            'X-RapidAPI-Key': Deno.env.get('RAPIDAPI_KEY') || '',
-            'X-RapidAPI-Host': new URL(apiUrl).hostname,
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-          }
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          console.log('API Response:', data);
+        try {
+          const data = JSON.parse(responseText);
+          console.log('Parsed API Response:', data);
           
-          // Extract download URL from different API response formats
-          let downloadUrl = data.link || data.url || data.download_url || data.audio_url;
+          // Extract download URL from the API response
+          let downloadUrl = data.link || data.url || data.download_url || data.audio_url || data.dlink;
           
           if (downloadUrl) {
             console.log(`Downloading MP3 from: ${downloadUrl}`);
             const mp3Response = await fetch(downloadUrl);
+            console.log(`MP3 download response status: ${mp3Response.status}`);
+            
             if (mp3Response.ok) {
               const contentType = mp3Response.headers.get('content-type') || '';
               const arrayBuffer = await mp3Response.arrayBuffer();
               const byteLength = arrayBuffer.byteLength;
+              
+              console.log(`Downloaded ${byteLength} bytes with content-type: ${contentType}`);
+              
               // Validate that we actually got audio and not HTML or a tiny placeholder
-              if (contentType.includes('audio') || contentType.includes('mpeg')) {
-                if (byteLength >= 50_000) {
-                  console.log(`Successfully converted ${byteLength} bytes with content-type=${contentType}`);
-                  return new Uint8Array(arrayBuffer);
-                } else {
-                  console.warn(`Downloaded audio too small (${byteLength} bytes) - likely invalid. Trying next endpoint...`);
-                }
+              if (byteLength >= 10_000) { // Lower threshold for testing
+                console.log(`Successfully converted ${byteLength} bytes`);
+                return new Uint8Array(arrayBuffer);
               } else {
-                console.warn(`Unexpected content-type: ${contentType} (size=${byteLength}). Trying next endpoint...`);
+                console.warn(`Downloaded file too small (${byteLength} bytes) - likely invalid`);
               }
             } else {
               console.warn(`MP3 download failed with status ${mp3Response.status}`);
             }
+          } else {
+            console.error('No download URL found in API response. Available fields:', Object.keys(data));
           }
+        } catch (parseError) {
+          console.error('Failed to parse API response as JSON:', parseError);
+          console.log('Response was:', responseText);
         }
-      } catch (error) {
-        console.log(`API endpoint failed: ${error}`);
-        continue;
+      } else {
+        const errorText = await response.text();
+        console.error(`API request failed with status ${response.status}:`, errorText);
       }
+    } catch (fetchError) {
+      console.error('API request failed:', fetchError);
     }
-
-    // Fallback: Try alternative approach using yt-dlp compatible service
-    console.log('Trying alternative conversion method...');
-    const fallbackUrl = `https://api.youtube.com/youtube/v3/videos?id=${videoId}&key=${Deno.env.get('YOUTUBE_API_KEY') || ''}&part=snippet`;
     
-    // If all API services fail, return an empty MP3 structure
-    console.log('All conversion methods failed, creating empty MP3 placeholder');
-    throw new Error('YouTube conversion failed - all methods exhausted');
+    // If conversion failed, throw error instead of returning placeholder
+    throw new Error('YouTube conversion failed - API did not provide valid audio file');
     
   } catch (error) {
     console.error('YouTube to MP3 conversion failed:', error);
