@@ -146,11 +146,23 @@ async function convertYouTubeToMP3(youtubeUrl: string, videoId: string): Promise
           if (downloadUrl) {
             console.log(`Downloading MP3 from: ${downloadUrl}`);
             const mp3Response = await fetch(downloadUrl);
-            
             if (mp3Response.ok) {
+              const contentType = mp3Response.headers.get('content-type') || '';
               const arrayBuffer = await mp3Response.arrayBuffer();
-              console.log(`Successfully converted ${arrayBuffer.byteLength} bytes`);
-              return new Uint8Array(arrayBuffer);
+              const byteLength = arrayBuffer.byteLength;
+              // Validate that we actually got audio and not HTML or a tiny placeholder
+              if (contentType.includes('audio') || contentType.includes('mpeg')) {
+                if (byteLength >= 50_000) {
+                  console.log(`Successfully converted ${byteLength} bytes with content-type=${contentType}`);
+                  return new Uint8Array(arrayBuffer);
+                } else {
+                  console.warn(`Downloaded audio too small (${byteLength} bytes) - likely invalid. Trying next endpoint...`);
+                }
+              } else {
+                console.warn(`Unexpected content-type: ${contentType} (size=${byteLength}). Trying next endpoint...`);
+              }
+            } else {
+              console.warn(`MP3 download failed with status ${mp3Response.status}`);
             }
           }
         }
@@ -170,14 +182,8 @@ async function convertYouTubeToMP3(youtubeUrl: string, videoId: string): Promise
     
   } catch (error) {
     console.error('YouTube to MP3 conversion failed:', error);
-    
-    // Create a minimal valid MP3 file as fallback
-    const mp3Header = new Uint8Array([
-      0xFF, 0xFB, 0x90, 0x00, 0x00, 0x0F, 0xF0, 0x00, 0x00, 0x69, 0x00, 0x00,
-      0x00, 0x08, 0x00, 0x00, 0x0D, 0x20, 0x00, 0x00, 0x01, 0x00, 0x00, 0x01,
-      0xA4, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x34, 0x80, 0x00, 0x00, 0x04
-    ]);
-    return mp3Header;
+    // Fail loudly so clients don't attempt to play silence
+    throw new Error('YouTube conversion failed - no valid audio produced');
   }
 }
 
@@ -192,6 +198,11 @@ async function uploadToGitHub(fileName: string, mp3Data: Uint8Array): Promise<st
   const repo = 'youtubeconverter';
   const path = `mp3/${fileName}`;
   const baseUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+
+  // Validate MP3 bytes to avoid uploading silence/placeholders
+  if (!mp3Data || mp3Data.length < 50_000) {
+    throw new Error(`MP3 content too small (${mp3Data?.length ?? 0} bytes) - conversion likely failed`);
+  }
 
   // Safe base64 conversion for arbitrary-size Uint8Array
   const base64Content = toBase64(mp3Data);
