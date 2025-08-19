@@ -135,44 +135,69 @@ async function convertYouTubeToMP3(youtubeUrl: string, videoId: string): Promise
       console.log(`Response headers:`, Object.fromEntries(response.headers.entries()));
       
       if (response.ok) {
-        const responseText = await response.text();
-        console.log('Raw API Response:', responseText);
-        
-        try {
-          const data = JSON.parse(responseText);
-          console.log('Parsed API Response:', data);
-          
-          // Extract download URL from the API response
-          let downloadUrl = data.link || data.url || data.download_url || data.audio_url || data.dlink;
-          
-          if (downloadUrl) {
-            console.log(`Downloading MP3 from: ${downloadUrl}`);
-            const mp3Response = await fetch(downloadUrl);
-            console.log(`MP3 download response status: ${mp3Response.status}`);
-            
-            if (mp3Response.ok) {
-              const contentType = mp3Response.headers.get('content-type') || '';
-              const arrayBuffer = await mp3Response.arrayBuffer();
-              const byteLength = arrayBuffer.byteLength;
-              
-              console.log(`Downloaded ${byteLength} bytes with content-type: ${contentType}`);
-              
-              // Validate that we actually got audio and not HTML or a tiny placeholder
-              if (byteLength >= 10_000) { // Lower threshold for testing
-                console.log(`Successfully converted ${byteLength} bytes`);
-                return new Uint8Array(arrayBuffer);
+        const respContentType = response.headers.get('content-type') || '';
+
+        // If provider returns audio directly, stream bytes
+        if (/audio|mpeg|octet-stream/i.test(respContentType)) {
+          const arrayBuffer = await response.arrayBuffer();
+          const byteLength = arrayBuffer.byteLength;
+          console.log(`Provider returned direct audio: ${byteLength} bytes, content-type: ${respContentType}`);
+          if (byteLength >= 50_000) {
+            return new Uint8Array(arrayBuffer);
+          } else {
+            console.warn(`Direct audio too small (${byteLength} bytes)`);
+          }
+        } else {
+          // Otherwise expect JSON with a downloadable URL
+          const responseText = await response.text();
+          console.log('Raw API Response:', responseText);
+
+          try {
+            const data: any = JSON.parse(responseText);
+            console.log('Parsed API Response:', data);
+
+            // Extract download URL from a variety of possible fields
+            let downloadUrl =
+              data.link ||
+              data.url ||
+              data.download_url ||
+              data.audio_url ||
+              data.dlink ||
+              data.mp3DownloadUrl ||
+              data.download ||
+              (data.data?.url) ||
+              (Array.isArray(data.data) ? data.data[0]?.url : undefined) ||
+              data.result?.download_url;
+
+            if (downloadUrl) {
+              console.log(`Downloading MP3 from: ${downloadUrl}`);
+              const mp3Response = await fetch(downloadUrl);
+              console.log(`MP3 download response status: ${mp3Response.status}`);
+
+              if (mp3Response.ok) {
+                const contentType = mp3Response.headers.get('content-type') || '';
+                const arrayBuffer = await mp3Response.arrayBuffer();
+                const byteLength = arrayBuffer.byteLength;
+
+                console.log(`Downloaded ${byteLength} bytes with content-type: ${contentType}`);
+
+                // Validate that we actually got audio and not HTML or a tiny placeholder
+                if (byteLength >= 50_000) {
+                  console.log(`Successfully converted ${byteLength} bytes`);
+                  return new Uint8Array(arrayBuffer);
+                } else {
+                  console.warn(`Downloaded file too small (${byteLength} bytes) - likely invalid`);
+                }
               } else {
-                console.warn(`Downloaded file too small (${byteLength} bytes) - likely invalid`);
+                console.warn(`MP3 download failed with status ${mp3Response.status}`);
               }
             } else {
-              console.warn(`MP3 download failed with status ${mp3Response.status}`);
+              console.error('No download URL found in API response. Available fields:', Object.keys(data));
             }
-          } else {
-            console.error('No download URL found in API response. Available fields:', Object.keys(data));
+          } catch (parseError) {
+            console.error('Failed to parse API response as JSON:', parseError);
+            console.log('Response was:', responseText);
           }
-        } catch (parseError) {
-          console.error('Failed to parse API response as JSON:', parseError);
-          console.log('Response was:', responseText);
         }
       } else {
         const errorText = await response.text();
