@@ -118,6 +118,10 @@ async function convertYouTubeToMP3(youtubeUrl: string, videoId: string): Promise
     // Use the new YouTube MP3 API endpoint
     const apiUrl = `https://youtube-mp3-audio-video-downloader.p.rapidapi.com/download-mp3/${videoId}?quality=low`;
     const rapidApiKey = Deno.env.get('RAPIDAPI_KEY') || '';
+    if (!rapidApiKey) {
+      console.error('RAPIDAPI_KEY is missing in Supabase Edge Function secrets');
+      throw new Error('RapidAPI key not configured');
+    }
     
     try {
       console.log(`Converting using RapidAPI: ${apiUrl}`);
@@ -127,7 +131,8 @@ async function convertYouTubeToMP3(youtubeUrl: string, videoId: string): Promise
         method: 'GET',
         headers: {
           'x-rapidapi-host': 'youtube-mp3-audio-video-downloader.p.rapidapi.com',
-          'x-rapidapi-key': rapidApiKey
+          'x-rapidapi-key': rapidApiKey,
+          'accept': 'application/json'
         }
       });
 
@@ -171,7 +176,12 @@ async function convertYouTubeToMP3(youtubeUrl: string, videoId: string): Promise
 
             if (downloadUrl) {
               console.log(`Downloading MP3 from: ${downloadUrl}`);
-              const mp3Response = await fetch(downloadUrl);
+              const mp3Response = await fetch(downloadUrl, {
+                headers: {
+                  'accept': 'audio/mpeg, audio/*;q=0.9, */*;q=0.8',
+                  'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0 Safari/537.36'
+                }
+              });
               console.log(`MP3 download response status: ${mp3Response.status}`);
 
               if (mp3Response.ok) {
